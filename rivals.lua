@@ -1,6 +1,6 @@
 --========================================================--
 --                 SAKI SCRIPTS UI (MASTER EDITION)
---                     RIVALS • AIMBOT & COMBAT
+--            RIVALS • AIMBOT, ESP & COMBAT SUITE
 --========================================================--
 
 local GAME_NAME = "RIVALS"
@@ -51,11 +51,13 @@ local State = {
     FOVRadius = 120,
     WalkSpeedValue = 16,
     HighlightESP = false,
+    HealthBarESP = false,
+    DistanceESP = false,
     InfJump = false
 }
 
 --------------------------------------------------------------------------------
--- FOV CIRCLE DRAWING SETUP (Safe Fallback)
+-- FOV CIRCLE DRAWING SETUP
 --------------------------------------------------------------------------------
 local FOVCircle = nil
 pcall(function()
@@ -99,7 +101,6 @@ local function getClosestEnemy()
                 local hum = char:FindFirstChildOfClass("Humanoid")
                 local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
 
-                -- Dead Check
                 if State.DeadCheck and hum and hum.Health <= 0 then
                     continue
                 end
@@ -110,7 +111,6 @@ local function getClosestEnemy()
                         local distFromMouse = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
                         
                         if distFromMouse < shortestDistance then
-                            -- Wall Check
                             if State.WallCheck and not isVisible(head, char) then
                                 continue
                             end
@@ -129,7 +129,6 @@ end
 
 -- 1. Main Aimbot Engine
 RunService.RenderStepped:Connect(function()
-    -- Update FOV Circle
     if FOVCircle then
         local mousePos = UserInputService:GetMouseLocation()
         FOVCircle.Position = mousePos
@@ -137,7 +136,6 @@ RunService.RenderStepped:Connect(function()
         FOVCircle.Visible = State.DrawFOV and State.AimbotActive
     end
 
-    -- Lock Camera to Target on Right Click or Mobile Touch
     if State.AimbotActive and (UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) or UserInputService:IsMouseButtonPressed(Enum.UserInputType.Touch)) then
         local target = getClosestEnemy()
         if target then
@@ -163,33 +161,146 @@ RunService.RenderStepped:Connect(function(deltaTime)
     end)
 end)
 
--- 3. Enemy Highlight ESP
+-- 3. ESP ENGINES (Highlight Chams, Health Bar, Distance)
 local espCache = {}
-local function clearESP()
+local billboardCache = {}
+
+local function clearAllESP()
     for _, hl in pairs(espCache) do if hl then hl:Destroy() end end
     table.clear(espCache)
+    for _, bb in pairs(billboardCache) do if bb then bb:Destroy() end end
+    table.clear(billboardCache)
 end
 
 RunService.RenderStepped:Connect(function()
-    if State.HighlightESP then
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and (not player.Team or player.Team ~= LocalPlayer.Team) then
-                local char = player.Character
-                if char and char:FindFirstChild("HumanoidRootPart") then
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and (not player.Team or player.Team ~= LocalPlayer.Team) then
+            local char = player.Character
+            if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChildOfClass("Humanoid") then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                local hrp = char.HumanoidRootPart
+                
+                -- Highlight Chams
+                if State.HighlightESP and hum.Health > 0 then
                     if not espCache[char] then
                         local hl = Instance.new("Highlight")
-                        hl.Name = "Saki_Rivals_ESP"
+                        hl.Name = "Saki_Rivals_Chams"
                         hl.FillColor = Color3.fromRGB(255, 25, 35)
                         hl.OutlineColor = Color3.fromRGB(255, 255, 255)
                         hl.FillTransparency = 0.4
                         hl.Parent = char
                         espCache[char] = hl
                     end
+                else
+                    if espCache[char] then
+                        espCache[char]:Destroy()
+                        espCache[char] = nil
+                    end
                 end
+
+                -- Health Bar & Distance Billboard
+                local shouldShowBillboard = (State.HealthBarESP or State.DistanceESP) and (hum.Health > 0)
+                if shouldShowBillboard then
+                    local bb = billboardCache[char]
+                    if not bb then
+                        bb = Instance.new("BillboardGui")
+                        bb.Name = "Saki_Rivals_Billboard"
+                        bb.Adornee = hrp
+                        bb.Size = UDim2.new(0, 110, 0, 40)
+                        bb.StudsOffset = Vector3.new(0, 3.2, 0)
+                        bb.AlwaysOnTop = true
+                        bb.Parent = getGuiParent()
+
+                        local bgFrame = Instance.new("Frame", bb)
+                        bgFrame.Name = "BG"
+                        bgFrame.Size = UDim2.new(1, 0, 1, 0)
+                        bgFrame.BackgroundTransparency = 1
+
+                        local distLbl = Instance.new("TextLabel", bgFrame)
+                        distLbl.Name = "DistLabel"
+                        distLbl.Size = UDim2.new(1, 0, 0, 14)
+                        distLbl.Position = UDim2.new(0, 0, 0, 0)
+                        distLbl.BackgroundTransparency = 1
+                        distLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+                        distLbl.TextSize = 11
+                        distLbl.Font = Enum.Font.Bangers
+                        distLbl.TextStrokeTransparency = 0
+                        distLbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+
+                        local hpBarBg = Instance.new("Frame", bgFrame)
+                        hpBarBg.Name = "HpBarBg"
+                        hpBarBg.Size = UDim2.new(0.9, 0, 0, 6)
+                        hpBarBg.Position = UDim2.new(0.05, 0, 0, 18)
+                        hpBarBg.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+                        hpBarBg.BorderSizePixel = 0
+                        Instance.new("UICorner", hpBarBg).CornerRadius = UDim.new(1, 0)
+
+                        local hpBarFill = Instance.new("Frame", hpBarBg)
+                        hpBarFill.Name = "HpBarFill"
+                        hpBarFill.Size = UDim2.new(1, 0, 1, 0)
+                        hpBarFill.BackgroundColor3 = Color3.fromRGB(80, 255, 100)
+                        hpBarFill.BorderSizePixel = 0
+                        Instance.new("UICorner", hpBarFill).CornerRadius = UDim.new(1, 0)
+
+                        local hpText = Instance.new("TextLabel", bgFrame)
+                        hpText.Name = "HpText"
+                        hpText.Size = UDim2.new(1, 0, 0, 12)
+                        hpText.Position = UDim2.new(0, 0, 0, 26)
+                        hpText.BackgroundTransparency = 1
+                        hpText.TextColor3 = Color3.fromRGB(80, 255, 100)
+                        hpText.TextSize = 10
+                        hpText.Font = Enum.Font.Bangers
+                        hpText.TextStrokeTransparency = 0
+
+                        billboardCache[char] = bb
+                    end
+
+                    -- Update Distance
+                    local distLbl = bb.BG:FindFirstChild("DistLabel")
+                    if distLbl then
+                        if State.DistanceESP and myRoot then
+                            local dist = math.floor((hrp.Position - myRoot.Position).Magnitude)
+                            distLbl.Text = player.DisplayName .. " [" .. tostring(dist) .. " studs]"
+                            distLbl.Visible = true
+                        else
+                            distLbl.Text = player.DisplayName
+                            distLbl.Visible = State.HealthBarESP
+                        end
+                    end
+
+                    -- Update Health Bar
+                    local hpBarBg = bb.BG:FindFirstChild("HpBarBg")
+                    local hpText = bb.BG:FindFirstChild("HpText")
+                    if hpBarBg and hpText then
+                        if State.HealthBarESP then
+                            hpBarBg.Visible = true
+                            hpText.Visible = true
+                            local maxHp = hum.MaxHealth > 0 and hum.MaxHealth or 100
+                            local hpPct = math.clamp(hum.Health / maxHp, 0, 1)
+                            hpBarBg.HpBarFill.Size = UDim2.new(hpPct, 0, 1, 0)
+                            
+                            local hpColor = hpPct > 0.5 and Color3.fromRGB(80, 255, 100) or (hpPct > 0.25 and Color3.fromRGB(255, 200, 50) or Color3.fromRGB(255, 40, 40))
+                            hpBarBg.HpBarFill.BackgroundColor3 = hpColor
+                            hpText.TextColor3 = hpColor
+                            hpText.Text = math.floor(hum.Health) .. " / " .. math.floor(maxHp) .. " HP"
+                        else
+                            hpBarBg.Visible = false
+                            hpText.Visible = false
+                        end
+                    end
+                else
+                    if billboardCache[char] then
+                        billboardCache[char]:Destroy()
+                        billboardCache[char] = nil
+                    end
+                end
+            else
+                if espCache[char] then espCache[char]:Destroy(); espCache[char] = nil end
+                if billboardCache[char] then billboardCache[char]:Destroy(); billboardCache[char] = nil end
             end
         end
-    else
-        if next(espCache) ~= nil then clearESP() end
     end
 end)
 
@@ -217,7 +328,6 @@ ScreenGui.IgnoreGuiInset = true
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = getGuiParent()
 
--- MAIN FRAME (MINI COMPACT: 235 x 265)
 local Main = Instance.new("Frame")
 Main.Name = "Main"
 Main.Parent = ScreenGui
@@ -236,7 +346,6 @@ MainStroke.Color = RED
 MainStroke.Thickness = 1.8
 MainStroke.Parent = Main
 
--- TOP BAR
 local TopBar = Instance.new("Frame")
 TopBar.Name = "TopBar"
 TopBar.Parent = Main
@@ -301,7 +410,6 @@ TopDivider.Size = UDim2.new(1, 0, 0, 1.5)
 TopDivider.BackgroundColor3 = RED
 TopDivider.BorderSizePixel = 0
 
--- CONTENT SCROLL CONTAINER
 local Content = Instance.new("Frame")
 Content.Name = "Content"
 Content.Parent = Main
@@ -330,7 +438,6 @@ local TopPadding = Instance.new("UIPadding", Scroll)
 TopPadding.PaddingTop = UDim.new(0, 4)
 TopPadding.PaddingBottom = UDim.new(0, 6)
 
--- FOOTER
 local FooterDivider = Instance.new("Frame", Main)
 FooterDivider.Name = "FooterDivider"
 FooterDivider.Position = UDim2.new(0, 0, 1, -24)
@@ -351,7 +458,6 @@ MadeBy.Font = Enum.Font.Bangers
 MadeBy.TextXAlignment = Enum.TextXAlignment.Center
 MadeBy.TextYAlignment = Enum.TextYAlignment.Center
 
--- FLOATING MOBILE TOGGLE BUTTON
 local FloatingBtn = Instance.new("TextButton")
 FloatingBtn.Name = "FloatingBtn"
 FloatingBtn.Size = UDim2.fromOffset(40, 40)
@@ -375,7 +481,6 @@ FloatingBtn.MouseButton1Click:Connect(function()
     Main.Visible = not Main.Visible
 end)
 
--- MINIMIZE & CLOSE BEHAVIOR
 local Minimized = false
 Minimize.MouseButton1Click:Connect(function()
     Minimized = not Minimized
@@ -403,7 +508,6 @@ Close.MouseButton1Click:Connect(function()
     ScreenGui.Enabled = false
 end)
 
--- PC & TOUCH DRAGGING
 local Dragging = false
 local DragStart, StartPosition
 
@@ -434,9 +538,6 @@ UserInputService.InputChanged:Connect(function(Input)
     end
 end)
 
---========================================================--
--- SAKI COMPONENT CREATORS
---========================================================--
 local itemOrder = 0
 
 local function AddSection(title)
@@ -600,8 +701,10 @@ CreateToggle("Dead Check (Ignore Dead)", State.DeadCheck, function(v) State.Dead
 CreateToggle("Draw FOV Circle", State.DrawFOV, function(v) State.DrawFOV = v end)
 CreateSlider("FOV Radius", 50, 300, State.FOVRadius, function(v) State.FOVRadius = v end)
 
-AddSection("Visual Recon (ESP)")
+AddSection("Visual Recon (ESP Suite)")
 CreateToggle("Enemy Highlight Chams", false, function(v) State.HighlightESP = v end)
+CreateToggle("Live Health Bar ESP", false, function(v) State.HealthBarESP = v end)
+CreateToggle("Distance ESP (Studs)", false, function(v) State.DistanceESP = v end)
 
 AddSection("Movement & Utilities")
 CreateSlider("WalkSpeed Boost", 16, 200, State.WalkSpeedValue, function(v) State.WalkSpeedValue = v end)
@@ -610,8 +713,8 @@ CreateToggle("Infinite Jump", false, function(v) State.InfJump = v end)
 pcall(function()
     StarterGui:SetCore("SendNotification", {
         Title = "[SAKI SCRIPTS]",
-        Text = "RIVALS Master Aimbot Loaded!",
+        Text = "RIVALS Master Aimbot & ESP Suite Loaded!",
         Duration = 3.5
     })
 end)
-print("[SAKI SCRIPTS] RIVALS Master Aimbot Loaded Successfully!")
+print("[SAKI SCRIPTS] RIVALS Master Aimbot & ESP Suite Loaded Successfully!")
